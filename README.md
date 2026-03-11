@@ -6,7 +6,7 @@ enforces blank-line formatting rules in Go code.
 ## Installation
 
 ```sh
-go install github.com/carsonak/go-newliner/cmd/go-newliner@latest
+go install github.com/carsonak/go-newliner@latest
 ```
 
 ## Usage

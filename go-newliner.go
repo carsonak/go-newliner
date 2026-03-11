@@ -2,7 +2,7 @@
 package main
 
 import (
-	"github.com/carsonak/go-newliner/analyzer"
+	"github.com/carsonak/go-newliner/internal/analyzer"
 	"golang.org/x/tools/go/analysis/singlechecker"
 )
 

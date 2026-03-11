@@ -3,7 +3,7 @@ package analyzer_test
 import (
 	"testing"
 
-	"github.com/carsonak/go-newliner/analyzer"
+	"github.com/carsonak/go-newliner/internal/analyzer"
 	analysisTest "golang.org/x/tools/go/analysis/analysistest"
 )
 
