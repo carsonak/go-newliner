@@ -366,23 +366,40 @@ func readSource(pass *analysis.Pass, file *ast.File) []byte {
 	return readFileBytes(pass.Fset.Position(start).Filename)
 }
 
-// isNilCheck returns true if the if statement's condition is of the form
-// `<name> != nil` where <name> is one of the provided variable names.
+// isNilCheck returns true if the if statement's condition contains a
+// `<name> != nil` comparison where <name> is one of the provided variable
+// names. It handles compound conditions (&&, ||) and parenthesized expressions.
 func isNilCheck(ifStmt *ast.IfStmt, names map[string]bool) bool {
 	if len(names) == 0 {
 		return false
 	}
 
-	cond, ok := ifStmt.Cond.(*ast.BinaryExpr)
+	return exprContainsNilCheck(ifStmt.Cond, names)
+}
 
-	if !ok {
-		return false
+// exprContainsNilCheck recursively checks whether expr contains a
+// `<name> != nil` comparison for any name in the set.
+func exprContainsNilCheck(expr ast.Expr, names map[string]bool) bool {
+	switch e := expr.(type) {
+	case *ast.BinaryExpr:
+		if e.Op == token.NEQ {
+			return isNilComparison(e, names)
+		}
+
+		// Recurse into && and || operands.
+		if e.Op == token.LAND || e.Op == token.LOR {
+			return exprContainsNilCheck(e.X, names) || exprContainsNilCheck(e.Y, names)
+		}
+	case *ast.ParenExpr:
+		return exprContainsNilCheck(e.X, names)
 	}
 
-	if cond.Op != token.NEQ {
-		return false
-	}
+	return false
+}
 
+// isNilComparison checks whether a != binary expression compares one of the
+// named variables against nil.
+func isNilComparison(cond *ast.BinaryExpr, names map[string]bool) bool {
 	xIdent, xOk := cond.X.(*ast.Ident)
 	yIdent, yOk := cond.Y.(*ast.Ident)
 

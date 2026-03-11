@@ -91,7 +91,7 @@ Contiguous declarations are treated as a group — only the last one in the grou
   }
 
   conn, connErr := dial()
-  if connErr != nil { // also allowed
+  if (connErr != nil) { // also allowed
       return connErr
   }
   ```

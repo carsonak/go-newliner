@@ -1,6 +1,9 @@
-package a
+package newliner_examples
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // --- Rule 1: Closing braces need a blank line ---
 
@@ -8,7 +11,6 @@ func rule1_missing_blank() {
 	if true {
 		fmt.Println("inside")
 	} // want "closing brace should be followed by a blank line"
-
 	fmt.Println("after if")
 }
 
@@ -24,7 +26,6 @@ func rule1_for_missing_blank() {
 	for i := 0; i < 1; i++ {
 		fmt.Println(i)
 	} // want "closing brace should be followed by a blank line"
-
 	fmt.Println("after for")
 }
 
@@ -56,7 +57,6 @@ func rule1_exceptionB_for() {
 
 func rule2_missing_blank() {
 	x := 1 // want "declaration should be followed by a blank line"
-
 	fmt.Println(x)
 }
 
@@ -70,7 +70,6 @@ func rule2_ok() {
 func rule2_contiguous_missing() {
 	x := 1
 	y := 2 // want "declaration should be followed by a blank line"
-
 	fmt.Println(x, y)
 }
 
@@ -94,11 +93,32 @@ func rule2_exceptionA_custom_errvar() {
 	_ = data
 }
 
+// Rule 2 Exception A: custom error variable name with multiple conditions
+func rule2_exceptionA_custom_errvar_multiple_conditions() {
+	data, readErr := fmt.Println("hello")
+	if readErr != nil || data < 1 {
+		return
+	}
+
+	_ = data
+}
+
+func printLine(a ...any) (int, error) { return -1, fmt.Errorf("not implemented") }
+
+// Rule 2 Exception A: custom error variable name with multiple conditions in parenthesis
+func rule2_exceptionA_custom_errvar_multiple_conditions_with_parenthesis() {
+	data, readErr := printLine("hello")
+	if (readErr != nil || data < 1) && data != -2 {
+		return
+	}
+
+	_ = data
+}
+
 // --- Rule 3: Go statements need a blank line ---
 
 func rule3_missing_blank() {
 	go func() {}() // want "go statement should be followed by a blank line"
-
 	fmt.Println("after go")
 }
 
@@ -117,7 +137,6 @@ func rule3_exceptionA() {
 func rule3_contiguous_missing() {
 	go func() {}()
 	go func() {}() // want "go statement should be followed by a blank line"
-
 	fmt.Println("after")
 }
 
@@ -137,6 +156,17 @@ func rule1_exceptionA_defer() {
 func rule1_exceptionA_defer_custom_errvar() {
 	f, openErr := openSomething()
 	if openErr != nil {
+		return
+	}
+	defer f.Close()
+
+	fmt.Println(f)
+}
+
+// Rule 1 Exception A: defer cleanup with custom error variable name in multiple conditions
+func rule1_exceptionA_defer_custom_errvar_multiple_conditions() {
+	f, openErr := openSomething()
+	if openErr != nil && !strings.Contains(openErr.Error(), "ignore") {
 		return
 	}
 	defer f.Close()
