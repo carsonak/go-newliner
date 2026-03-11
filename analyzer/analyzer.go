@@ -28,15 +28,18 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 	insp.Preorder(nodeFilter, func(n ast.Node) {
 		var body *ast.BlockStmt
+
 		switch n := n.(type) {
 		case *ast.FuncDecl:
 			body = n.Body
 		case *ast.FuncLit:
 			body = n.Body
 		}
+
 		if body == nil {
 			return
 		}
+
 		checkStmtList(pass, body.List)
 	})
 
@@ -52,6 +55,7 @@ func checkStmtList(pass *analysis.Pass, stmts []ast.Stmt) {
 		if i+1 >= len(stmts) {
 			continue
 		}
+
 		next := stmts[i+1]
 
 		switch s := stmt.(type) {
@@ -90,6 +94,7 @@ func recurseIntoStmt(pass *analysis.Pass, stmt ast.Stmt) {
 		if s.Body != nil {
 			checkStmtList(pass, s.Body.List)
 		}
+
 		if s.Else != nil {
 			recurseIntoStmt(pass, s.Else)
 		}
@@ -135,6 +140,7 @@ func checkClosingBrace(pass *analysis.Pass, ifStmt *ast.IfStmt, stmts []ast.Stmt
 	if idx+1 >= len(stmts) {
 		return
 	}
+
 	next := stmts[idx+1]
 	block := outermostIfBody(ifStmt)
 
@@ -146,9 +152,9 @@ func checkClosingBrace(pass *analysis.Pass, ifStmt *ast.IfStmt, stmts []ast.Stmt
 	gap := lineGap(pass, block.Rbrace, next.Pos())
 
 	// Exception A: defer cleanup pattern.
-	if gap == 1 && isErrNilCheck(ifStmt) {
-		if deferStmt, ok := next.(*ast.DeferStmt); ok {
-			if idx >= 1 {
+	if gap == 1 && idx >= 1 {
+		if names := lhsNames(stmts[idx-1]); isNilCheck(ifStmt, names) {
+			if deferStmt, ok := next.(*ast.DeferStmt); ok {
 				if matchesDeferCleanup(stmts[idx-1], deferStmt) {
 					return
 				}
@@ -172,6 +178,7 @@ func outermostIfBody(ifStmt *ast.IfStmt) *ast.BlockStmt {
 			break
 		}
 	}
+
 	return ifStmt.Body
 }
 
@@ -187,6 +194,7 @@ func checkClosingBraceGeneric(pass *analysis.Pass, block *ast.BlockStmt, next as
 	}
 
 	gap := lineGap(pass, block.Rbrace, next.Pos())
+
 	if gap < 2 {
 		reportMissingBlank(pass, block.Rbrace, "closing brace should be followed by a blank line")
 	}
@@ -197,6 +205,7 @@ func checkClosingBraceGeneric(pass *analysis.Pass, block *ast.BlockStmt, next as
 func checkDecl(pass *analysis.Pass, stmts []ast.Stmt, idx int) {
 	// Find the end of the contiguous block of declaration statements.
 	end := idx
+
 	for end+1 < len(stmts) {
 		if isDeclLike(stmts[end+1]) {
 			end++
@@ -208,17 +217,24 @@ func checkDecl(pass *analysis.Pass, stmts []ast.Stmt, idx int) {
 	if idx != end {
 		return
 	}
+
 	if end+1 >= len(stmts) {
 		return
 	}
+
 	next := stmts[end+1]
 
-	// Exception A: next is an error-checking if.
-	if ifStmt, ok := next.(*ast.IfStmt); ok && isErrNilCheck(ifStmt) {
-		return
+	// Exception A: next is an if that checks a variable from this declaration block against nil.
+	if ifStmt, ok := next.(*ast.IfStmt); ok {
+		names := collectDeclBlockNames(stmts, idx, end)
+
+		if isNilCheck(ifStmt, names) {
+			return
+		}
 	}
 
 	gap := lineGap(pass, stmts[end].End(), next.Pos())
+
 	if gap < 2 {
 		reportMissingBlank(pass, stmts[end].End(), "declaration should be followed by a blank line")
 	}
@@ -229,9 +245,11 @@ func isDeclLike(stmt ast.Stmt) bool {
 	if _, ok := stmt.(*ast.DeclStmt); ok {
 		return true
 	}
+
 	if assign, ok := stmt.(*ast.AssignStmt); ok && assign.Tok == token.DEFINE {
 		return true
 	}
+
 	return false
 }
 
@@ -240,6 +258,7 @@ func isDeclLike(stmt ast.Stmt) bool {
 func checkGo(pass *analysis.Pass, stmts []ast.Stmt, idx int) {
 	// Find the end of the contiguous block of GoStmts.
 	end := idx
+
 	for end+1 < len(stmts) {
 		if _, ok := stmts[end+1].(*ast.GoStmt); ok {
 			end++
@@ -247,12 +266,15 @@ func checkGo(pass *analysis.Pass, stmts []ast.Stmt, idx int) {
 			break
 		}
 	}
+
 	if idx != end {
 		return
 	}
+
 	if end+1 >= len(stmts) {
 		return
 	}
+
 	next := stmts[end+1]
 
 	// Exception A: next non-whitespace char is }.
@@ -261,6 +283,7 @@ func checkGo(pass *analysis.Pass, stmts []ast.Stmt, idx int) {
 	}
 
 	gap := lineGap(pass, stmts[end].End(), next.Pos())
+
 	if gap < 2 {
 		reportMissingBlank(pass, stmts[end].End(), "go statement should be followed by a blank line")
 	}
@@ -273,6 +296,7 @@ func checkGo(pass *analysis.Pass, stmts []ast.Stmt, idx int) {
 func lineGap(pass *analysis.Pass, from, to token.Pos) int {
 	fromLine := pass.Fset.Position(from).Line
 	toLine := pass.Fset.Position(to).Line
+
 	return toLine - fromLine
 }
 
@@ -280,9 +304,11 @@ func lineGap(pass *analysis.Pass, from, to token.Pos) int {
 // source file is }, ] or ).
 func nextNonWSIsClosing(pass *analysis.Pass, pos token.Pos) bool {
 	tokFile := pass.Fset.File(pos)
+
 	if tokFile == nil {
 		return false
 	}
+
 	offset := tokFile.Offset(pos)
 	// pos points at the character itself (e.g. '}'), so start scanning after it.
 	offset++
@@ -290,34 +316,43 @@ func nextNonWSIsClosing(pass *analysis.Pass, pos token.Pos) bool {
 	for _, f := range pass.Files {
 		fPos := pass.Fset.Position(f.Pos())
 		fEnd := pass.Fset.Position(f.End())
+
 		if pass.Fset.Position(pos).Filename != fPos.Filename {
 			continue
 		}
 		// Read from the token.File size.
 		src := readSource(pass, f)
+
 		if src == nil {
 			return false
 		}
+
 		_ = fEnd // keep linter quiet
 		for offset < len(src) {
 			ch := src[offset]
+
 			if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
 				offset++
 				continue
 			}
+
 			return ch == '}' || ch == ']' || ch == ')'
 		}
+
 		return false
 	}
+
 	return false
 }
 
 // readSource retrieves the raw source bytes for a file via the token.File.
 func readSource(pass *analysis.Pass, file *ast.File) []byte {
 	tokFile := pass.Fset.File(file.Pos())
+
 	if tokFile == nil {
 		return nil
 	}
+
 	size := tokFile.Size()
 	start := tokFile.Pos(0)
 	end := tokFile.Pos(size)
@@ -331,24 +366,86 @@ func readSource(pass *analysis.Pass, file *ast.File) []byte {
 	return readFileBytes(pass.Fset.Position(start).Filename)
 }
 
-// isErrNilCheck returns true if the if statement is of the form `if err != nil { … }`.
-func isErrNilCheck(ifStmt *ast.IfStmt) bool {
+// isNilCheck returns true if the if statement's condition is of the form
+// `<name> != nil` where <name> is one of the provided variable names.
+func isNilCheck(ifStmt *ast.IfStmt, names map[string]bool) bool {
+	if len(names) == 0 {
+		return false
+	}
+
 	cond, ok := ifStmt.Cond.(*ast.BinaryExpr)
+
 	if !ok {
 		return false
 	}
+
 	if cond.Op != token.NEQ {
 		return false
 	}
+
 	xIdent, xOk := cond.X.(*ast.Ident)
 	yIdent, yOk := cond.Y.(*ast.Ident)
-	if xOk && xIdent.Name == "err" && yOk && yIdent.Name == "nil" {
+
+	// <name> != nil
+	if xOk && names[xIdent.Name] && yOk && yIdent.Name == "nil" {
 		return true
 	}
-	if xOk && xIdent.Name == "nil" && yOk && yIdent.Name == "err" {
+
+	// nil != <name>
+	if xOk && xIdent.Name == "nil" && yOk && names[yIdent.Name] {
 		return true
 	}
+
 	return false
+}
+
+// lhsNames returns the set of names on the left-hand side of an assignment or
+// short variable declaration. Returns nil for other statement types.
+func lhsNames(stmt ast.Stmt) map[string]bool {
+	assign, ok := stmt.(*ast.AssignStmt)
+
+	if !ok {
+		return nil
+	}
+
+	names := make(map[string]bool)
+
+	for _, expr := range assign.Lhs {
+		if ident, ok := expr.(*ast.Ident); ok {
+			names[ident.Name] = true
+		}
+	}
+
+	return names
+}
+
+// collectDeclBlockNames collects all LHS variable names from a contiguous
+// block of declaration statements (stmts[start] through stmts[end]).
+func collectDeclBlockNames(stmts []ast.Stmt, start, end int) map[string]bool {
+	names := make(map[string]bool)
+
+	for i := start; i <= end; i++ {
+		switch s := stmts[i].(type) {
+		case *ast.AssignStmt:
+			for _, expr := range s.Lhs {
+				if ident, ok := expr.(*ast.Ident); ok {
+					names[ident.Name] = true
+				}
+			}
+		case *ast.DeclStmt:
+			if genDecl, ok := s.Decl.(*ast.GenDecl); ok {
+				for _, spec := range genDecl.Specs {
+					if vs, ok := spec.(*ast.ValueSpec); ok {
+						for _, ident := range vs.Names {
+							names[ident.Name] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return names
 }
 
 // matchesDeferCleanup checks whether a defer statement is cleaning up a
@@ -364,11 +461,13 @@ func isErrNilCheck(ifStmt *ast.IfStmt) bool {
 // matches the receiver or argument of the deferred call.
 func matchesDeferCleanup(preceding ast.Stmt, deferStmt *ast.DeferStmt) bool {
 	assignStmt, ok := preceding.(*ast.AssignStmt)
+
 	if !ok {
 		return false
 	}
 
 	lhsNames := make(map[string]bool)
+
 	for _, expr := range assignStmt.Lhs {
 		if ident, ok := expr.(*ast.Ident); ok {
 			lhsNames[ident.Name] = true
@@ -376,6 +475,7 @@ func matchesDeferCleanup(preceding ast.Stmt, deferStmt *ast.DeferStmt) bool {
 	}
 
 	call := deferStmt.Call
+
 	if call == nil {
 		return false
 	}
@@ -429,9 +529,11 @@ func reportMissingBlank(pass *analysis.Pass, pos token.Pos, message string) {
 // following the line that contains pos.
 func beginningOfNextLine(pass *analysis.Pass, pos token.Pos) token.Pos {
 	tokFile := pass.Fset.File(pos)
+
 	if tokFile == nil {
 		return pos
 	}
+
 	position := pass.Fset.Position(pos)
 	line := position.Line
 	// If there is a next line in the file, return its start.

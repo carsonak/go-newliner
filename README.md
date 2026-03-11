@@ -41,7 +41,7 @@ doMore()
 
 **Exceptions:**
 
-- **Defer cleanup** — If an `if err != nil` block is immediately followed by a `defer` that cleans up a variable assigned before the `if`, no blank line is required:
+- **Defer cleanup** — If the `if` block checks any variable from the preceding assignment against `nil`, and is immediately followed by a `defer` that cleans up a variable from that same assignment, no blank line is required:
 
   ```go
   f, err := os.Open(name)
@@ -50,6 +50,8 @@ doMore()
   }
   defer f.Close() // allowed: no blank line needed
   ```
+
+  This works regardless of the error variable's name (`err`, `readErr`, etc.).
 
 - **Trailing close** — If the next non-whitespace character is `}`, `]`, or `)`, no blank line is required:
 
@@ -80,12 +82,17 @@ Contiguous declarations are treated as a group — only the last one in the grou
 
 **Exception:**
 
-- **Error check** — If the next statement is `if err != nil`, no blank line is required:
+- **Nil check** — If the next statement is an `if` that checks any variable from the declaration block against `nil`, no blank line is required:
 
   ```go
   x, err := doSomething()
   if err != nil { // allowed: no blank line needed
       return err
+  }
+
+  conn, connErr := dial()
+  if connErr != nil { // also allowed
+      return connErr
   }
   ```
 

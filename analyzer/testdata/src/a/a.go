@@ -80,6 +80,16 @@ func rule2_exceptionA() {
 	_ = x
 }
 
+// Rule 2 Exception A: custom error variable name
+func rule2_exceptionA_custom_errvar() {
+	data, readErr := fmt.Println("hello")
+	if readErr != nil {
+		return
+	}
+
+	_ = data
+}
+
 // --- Rule 3: Go statements need a blank line ---
 
 func rule3_missing_blank() {
@@ -110,6 +120,17 @@ func rule3_contiguous_missing() {
 func rule1_exceptionA_defer() {
 	f, err := openSomething()
 	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	fmt.Println(f)
+}
+
+// Rule 1 Exception A: defer cleanup with custom error variable name
+func rule1_exceptionA_defer_custom_errvar() {
+	f, openErr := openSomething()
+	if openErr != nil {
 		return
 	}
 	defer f.Close()
